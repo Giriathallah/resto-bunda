@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Resto Bunda – Setup Lokal
 
-## Getting Started
+Prasyarat
 
-First, run the development server:
+XAMPP (aktifkan Apache dan MySQL)
 
-```bash
+Node.js v22 atau lebih baru, npm v10 atau lebih baru
+
+Buat Database
+
+Buka phpMyAdmin dari XAMPP
+
+Buat database baru dengan nama: resto_bunda
+
+Konfigurasi Environment
+
+File .env sudah disertakan dalam project
+
+Tidak perlu diubah kecuali:
+
+MIDTRANS_SERVER_KEY dan NEXT_PUBLIC_MIDTRANS_CLIENT_KEY diisi dengan sandbox key dari Midtrans
+
+DATABASE_URL sudah diarahkan ke database resto_bunda di localhost
+
+Install Dependensi
+Jalankan perintah berikut di terminal:
+npm install
+
+Migrasi dan Seed Database
+Jalankan perintah berikut:
+npx prisma migrate dev --name init
+npx prisma db seed
+
+Seed akan membuat data awal:
+
+Admin: admin@gmail.com
+dengan password asdasdasd
+
+Beberapa user dan produk dummy
+
+Jalankan Project
+Jalankan perintah berikut:
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Akses aplikasi di browser melalui alamat:
+http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Akun Login
+Admin
+Email: admin@gmail.com
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Password: asdasdasd
 
-## Learn More
+User contoh
+Email: andi.wijaya@example.com
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Password: asdasdasd
