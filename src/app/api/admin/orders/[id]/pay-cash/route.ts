@@ -1,18 +1,21 @@
+// src/app/api/admin/orders/[id]/pay-cash/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { z } from "zod";
 
 export const runtime = "nodejs";
 
+// pakai coerce agar "amount" string dari JSON tetap jadi number
 const bodySchema = z.object({
-  amount: z.number().int().nonnegative(),
+  amount: z.coerce.number().int().nonnegative(),
 });
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+type Ctx = { params: Promise<{ id: string }> };
+
+export async function POST(req: NextRequest, ctx: Ctx) {
   try {
+    const { id } = await ctx.params;
+
     const json = await req.json().catch(() => ({}));
     const parse = bodySchema.safeParse(json);
     if (!parse.success) {
@@ -24,11 +27,12 @@ export async function POST(
     const { amount } = parse.data;
 
     const order = await prisma.order.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { items: true, payments: true },
     });
-    if (!order)
+    if (!order) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     if (order.status === "PAID") {
       return NextResponse.json(
@@ -45,6 +49,7 @@ export async function POST(
     }
 
     await prisma.$transaction(async (tx) => {
+      // catatan: kalau perlu, validasi stok tidak minus di sini
       for (const it of order.items) {
         await tx.product.update({
           where: { id: it.productId },

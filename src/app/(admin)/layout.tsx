@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
@@ -14,7 +14,7 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
   return (
@@ -45,26 +45,23 @@ export default function AdminLayout({
             className="mx-2 h-6 hidden sm:block"
           />
 
-          {/* Breadcrumb lite (only last segment) */}
           <div className="text-sm text-muted-foreground truncate">
             {pathname?.split("/").filter(Boolean).slice(-1)[0] ?? "dashboard"}
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            {/* Right actions placeholder */}
-            {/* TODO: add theme switch / notifications */}
-          </div>
+          <div className="ml-auto flex items-center gap-2">{/* actions */}</div>
         </div>
       </header>
 
-      {/* Body: Sidebar (desktop) + Content */}
       <div className="flex">
         <aside className="hidden md:block w-64 shrink-0 border-r bg-card/40">
           <Sidebar />
         </aside>
 
         <main className="flex-1">
-          <div className="mx-auto max-w-7xl p-4 sm:p-6">{children}</div>
+          <div className="mx-auto max-w-7xl p-4 sm:p-6">
+            <Suspense fallback={<div>Loading…</div>}>{children}</Suspense>
+          </div>
         </main>
       </div>
     </div>

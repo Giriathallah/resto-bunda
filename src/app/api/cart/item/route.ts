@@ -24,31 +24,31 @@ export async function PATCH(req: NextRequest) {
         error: "Invalid payload",
         issues: parse.error.flatten(),
       }),
-      {
-        status: 422,
-        headers: { "content-type": "application/json" },
-      }
+      { status: 422, headers: { "content-type": "application/json" } }
     );
   }
 
   const { productId, qty } = parse.data;
 
+  // Ambil cart (berdasar unique customerId)
   const cart = await prisma.cart.findUnique({
     where: { customerId: userId },
     select: { id: true },
   });
-  if (!cart) return json({ ok: true }); // nothing to do
+  if (!cart) return json({ ok: true });
 
-  const item = await prisma.cartItem.findFirst({
-    where: { cartId: cart.id, productId },
-    select: { id: true },
-  });
-  if (!item) return json({ ok: true });
-
+  // Di schema kamu ada @@unique([cartId, productId])
+  // Manfaatkan composite unique agar tidak perlu findFirst by scan.
   if (qty <= 0) {
-    await prisma.cartItem.delete({ where: { id: item.id } });
+    await prisma.cartItem.deleteMany({
+      where: { cartId: cart.id, productId },
+    });
   } else {
-    await prisma.cartItem.update({ where: { id: item.id }, data: { qty } });
+    // Update langsung; kalau tidak ada, count=0 (kita abaikan → idempotent)
+    await prisma.cartItem.updateMany({
+      where: { cartId: cart.id, productId },
+      data: { qty },
+    });
   }
 
   return json({ ok: true });
@@ -71,6 +71,9 @@ export async function DELETE(req: NextRequest) {
   });
   if (!cart) return json({ ok: true });
 
-  await prisma.cartItem.deleteMany({ where: { cartId: cart.id, productId } });
+  await prisma.cartItem.deleteMany({
+    where: { cartId: cart.id, productId },
+  });
+
   return json({ ok: true });
 }
