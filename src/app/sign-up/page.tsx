@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Mail, Lock, User, Github } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
 import { signUp, oAuthSignIn } from "@/actions/auth";
-import type { OAuthProvider } from "@/generated/prisma";
+import { OAuthProvider } from "@/generated/prisma";
 
 const GoogleIcon = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
@@ -44,16 +44,12 @@ export default function SignUpPage() {
 
     startTransition(async () => {
       const res = await signUp(form);
-      // signUp dapat mengembalikan string (error) atau { message }
       if (typeof res === "string") {
         setErrorMsg(res);
         return;
       }
-      if (res?.message) {
-        setSuccessMsg(res.message); // “Akun Anda berhasil dibuat! Silakan periksa email…”
-      } else {
-        setErrorMsg("Terjadi kesalahan. Silakan coba lagi.");
-      }
+      if (res?.message) setSuccessMsg(res.message);
+      else setErrorMsg("Terjadi kesalahan. Silakan coba lagi.");
     });
   };
 
@@ -75,7 +71,6 @@ export default function SignUpPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-card to-secondary/20 flex items-center justify-center p-4">
-      {/* Dekorasi Background */}
       <div className="absolute inset-0 opacity-5 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,_theme(colors.primary)_0%,_transparent_50%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,_theme(colors.accent)_0%,_transparent_50%)]" />
@@ -83,11 +78,9 @@ export default function SignUpPage() {
 
       <div className="w-full max-w-md relative">
         <div className="bg-card/80 backdrop-blur-sm border border-border rounded-2xl shadow-2xl p-8 relative overflow-hidden">
-          {/* Decorative */}
           <div className="absolute -top-2 -right-2 w-20 h-20 bg-primary/10 rounded-full blur-xl" />
           <div className="absolute -bottom-2 -left-2 w-16 h-16 bg-accent/10 rounded-full blur-lg" />
 
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
               <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
@@ -106,12 +99,16 @@ export default function SignUpPage() {
 
           {/* OAuth */}
           <div className="space-y-3 mb-6">
-            {oauthButton("GOOGLE", "Daftar dengan Google", <GoogleIcon />)}
             {oauthButton(
-              "GITHUB",
-              "Daftar dengan GitHub",
-              <Github className="w-5 h-5 text-foreground" />
+              OAuthProvider.google,
+              "Daftar dengan Google",
+              <GoogleIcon />
             )}
+            {/* {oauthButton(
+              OAuthProvider.discord,
+              "Daftar dengan Discord",
+              <Discord className="w-5 h-5 text-foreground" />
+            )} */}
           </div>
 
           {/* Divider */}
@@ -126,7 +123,31 @@ export default function SignUpPage() {
             </div>
           </div>
 
-          {/* Alert Sukses */}
+          {/* Card Akun Demo */}
+          <div className="mb-6 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+            <p className="font-medium mb-2">Akun demo (untuk testing):</p>
+            <div className="grid gap-2">
+              <div>
+                <span className="font-semibold">User</span>
+                <br />
+                <span className="font-mono">budi.santoso@example.com</span>
+                <br />
+                <span className="font-mono">asdasdasd</span>
+              </div>
+              <div className="border-t border-border/60 pt-2">
+                <span className="font-semibold">Admin</span>
+                <br />
+                <span className="font-mono">admin@gmail.com</span>
+                <br />
+                <span className="font-mono">asdasdasd</span>
+              </div>
+            </div>
+            <p className="mt-2 text-muted-foreground">
+              Gunakan akun di atas jika tidak ingin membuat akun baru.
+            </p>
+          </div>
+
+          {/* Alert sukses / error */}
           {successMsg && (
             <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 px-3 py-2 text-sm">
               <p className="font-medium">{successMsg}</p>
@@ -138,8 +159,6 @@ export default function SignUpPage() {
               </ul>
             </div>
           )}
-
-          {/* Alert Error */}
           {errorMsg && !successMsg && (
             <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 text-sm">
               {errorMsg}
@@ -245,7 +264,6 @@ export default function SignUpPage() {
             </button>
           </form>
 
-          {/* Switch */}
           <div className="mt-6 text-center">
             <p className="text-sm text-muted-foreground">
               Sudah punya akun?{" "}
