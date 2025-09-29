@@ -1,18 +1,21 @@
+// app/api/profile/route.ts
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 import prisma from "@/lib/prisma";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   try {
-    // Verify user session
     const userSession = await getCurrentUser({ withFullUser: true });
     if (!userSession) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch user data from database
+    const email = userSession.email;
+
     const user = await prisma.user.findUnique({
-      where: { email: userSession.email },
+      where: { email },
       select: {
         id: true,
         name: true,
@@ -26,7 +29,6 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Format response data
     const profileData = {
       username: user.name || user.email.split("@")[0],
       name: user.name,
@@ -34,17 +36,11 @@ export async function GET() {
       email: user.email,
     };
 
-    const response = NextResponse.json(profileData);
-
-    // Add caching headers (5 minutes)
-    response.headers.set(
-      "Cache-Control",
-      "s-maxage=300, stale-while-revalidate"
-    );
-
-    return response;
-  } catch (error) {
-    console.error("[PROFILE_GET]", error);
+    const res = NextResponse.json(profileData);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
+  } catch (err) {
+    console.error("[PROFILE_GET]", err);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }

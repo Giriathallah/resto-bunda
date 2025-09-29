@@ -2,13 +2,13 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { json } from "@/lib/http";
 import { setQtySchema } from "@/lib/validators/cart";
-import { getUserId } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth/getCurrentUser";
 
 export const runtime = "nodejs";
 
 /** PATCH /api/cart/item  { productId, qty }  → set quantity (0 = remove) */
 export async function PATCH(req: NextRequest) {
-  const userId = getUserId(req);
+  const user = await getCurrentUser({ withFullUser: false });
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
   const raw = await req.json().catch(() => ({}));

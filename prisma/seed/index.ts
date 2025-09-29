@@ -9,13 +9,21 @@ import {
 } from "@/generated/prisma";
 import { hashPassword, generateSalt } from "@/lib/auth/passwordHasher";
 
-const prisma = new PrismaClient();
+// Gunakan DIRECT_URL saat seed agar tidak lewat pgBouncer
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DIRECT_URL ?? process.env.DATABASE_URL,
+    },
+  },
+});
 
 // Helper functions
 function subDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() - days);
-  return result;
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0); // normalisasi ke awal hari (opsional, membantu konsistensi serviceDate)
+  d.setDate(d.getDate() - days);
+  return d;
 }
 
 function getRandomElement<T>(arr: T[]): T {
@@ -27,11 +35,12 @@ function getRandomNumber(min: number, max: number): number {
 }
 
 async function main() {
-  console.log("Seeding database...");
+  console.log("Seeding database (PostgreSQL/Supabase)...");
 
-  // 1. Seed Admin User
+  // 1. Admin User
   const adminSalt = generateSalt();
   const adminPassword = await hashPassword("asdasdasd", adminSalt);
+
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@gmail.com" },
     update: {},
@@ -44,9 +53,9 @@ async function main() {
       emailVerified: new Date(),
     },
   });
-  console.log(`✅ Admin user created/updated: ${adminUser.email}`);
+  console.log(`✅ Admin user ready: ${adminUser.email}`);
 
-  // 2. Seed Customer Users
+  // 2. Customer Users
   const CUSTOMERS = [
     { name: "Andi Wijaya", email: "andi.wijaya@example.com" },
     { name: "Budi Santoso", email: "budi.santoso@example.com" },
@@ -55,25 +64,25 @@ async function main() {
     { name: "Eko Prasetyo", email: "eko.prasetyo@example.com" },
   ];
 
-  console.log("Seeding customer users...");
-  for (const customer of CUSTOMERS) {
+  console.log("Seeding customers...");
+  for (const c of CUSTOMERS) {
     const salt = generateSalt();
-    const password = await hashPassword("asdasdasd", salt);
+    const pwd = await hashPassword("asdasdasd", salt);
     await prisma.user.upsert({
-      where: { email: customer.email },
+      where: { email: c.email },
       update: {},
       create: {
-        ...customer,
-        password,
+        ...c,
+        password: pwd,
         salt,
         role: UserRole.user,
         emailVerified: new Date(),
       },
     });
   }
-  console.log(`✅ ${CUSTOMERS.length} customer users seeded.`);
+  console.log(`✅ ${CUSTOMERS.length} customers ready`);
 
-  // 3. Seed Products
+  // 3. Products
   const MENU_ITEMS = [
     {
       name: "Caesar Salad",
@@ -133,37 +142,40 @@ async function main() {
     },
   ] as const;
 
-  const names = MENU_ITEMS.map((m) => m.name);
+  // createMany aman di Postgres. Jika ingin idempotent, cek yang sudah ada dulu:
   const existing = await prisma.product.findMany({
-    where: { name: { in: names } },
+    where: { name: { in: MENU_ITEMS.map((m) => m.name) } },
     select: { name: true },
   });
   const existingSet = new Set(existing.map((e) => e.name));
   const toCreate = MENU_ITEMS.filter((m) => !existingSet.has(m.name));
 
-  if (toCreate.length === 0) {
-    console.log("ℹ️ All menu items already exist.");
-  } else {
+  if (toCreate.length) {
     await prisma.product.createMany({
       data: toCreate.map((m) => ({ ...m, isActive: true })),
+      // skipDuplicates: true, // opsional (Postgres mendukung), bila ingin tanpa cek manual
     });
     console.log(`✅ Products seeded: ${toCreate.length}`);
+  } else {
+    console.log("ℹ️ All products already exist, skip.");
   }
 
-  // 4. Seed Diverse Sales Data
-  console.log("Seeding sales data...");
+  // 4. Sales (Orders + Items + Payments)
+  console.log("Seeding orders...");
   const existingOrdersCount = await prisma.order.count();
   if (existingOrdersCount > 0) {
-    console.log("ℹ️ Orders already exist. Skipping sales data seeding.");
+    console.log("ℹ️ Orders exist. Skipping sales seeding.");
   } else {
     const customers = await prisma.user.findMany({
       where: { role: UserRole.user },
+      select: { id: true },
     });
     const products = await prisma.product.findMany({
       where: { isActive: true },
+      select: { id: true, price: true },
     });
     if (customers.length === 0 || products.length === 0) {
-      console.warn("⚠️ Cannot seed orders without customers or products.");
+      console.warn("⚠️ Need customers & products to seed orders. Skipped.");
       return;
     }
 
@@ -175,75 +187,83 @@ async function main() {
       const ordersPerDay = getRandomNumber(2, 10);
 
       for (let j = 0; j < ordersPerDay; j++) {
-        const customer = getRandomElement(customers);
-        const itemsToOrder = Array.from({ length: getRandomNumber(1, 4) }, () =>
-          getRandomElement(products)
+        const customerId = getRandomElement(customers).id;
+        const pickedProducts = Array.from(
+          { length: getRandomNumber(1, 4) },
+          () => getRandomElement(products)
         );
 
-        const orderItems = itemsToOrder.map((product) => {
+        const orderItems = pickedProducts.map((p) => {
           const qty = getRandomNumber(1, 2);
           return {
-            productId: product.id,
+            productId: p.id,
             qty,
-            price: product.price,
-            total: product.price * qty,
+            price: p.price,
+            total: p.price * qty,
           };
         });
 
-        const subtotal = orderItems.reduce((acc, item) => acc + item.total, 0);
+        const subtotal = orderItems.reduce((acc, it) => acc + it.total, 0);
         const tax = Math.round(subtotal * 0.11);
         const total = subtotal + tax;
 
-        // 80% chance to be PAID, 10% CANCELLED, 10% other
-        const randomStatus = Math.random();
-        let status: OrderStatus;
-        if (randomStatus < 0.8) status = OrderStatus.PAID;
-        else if (randomStatus < 0.9) status = OrderStatus.CANCELLED;
-        else status = OrderStatus.AWAITING_PAYMENT;
+        // 80% PAID, 10% CANCELLED, 10% AWAITING
+        const r = Math.random();
+        const status =
+          r < 0.8
+            ? OrderStatus.PAID
+            : r < 0.9
+            ? OrderStatus.CANCELLED
+            : OrderStatus.AWAITING_PAYMENT;
 
         const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
         const orderCode = `ORD-${dateStr}-${String(1000 + orderCount)}`;
         const queueNumber = String(j + 1);
 
-        await prisma.order.create({
-          data: {
-            code: orderCode,
-            queueNumber,
-            serviceDate: date,
-            createdAt: date,
-            status,
-            diningType: getRandomElement([
-              DiningType.DINE_IN,
-              DiningType.TAKE_AWAY,
-            ]),
-            subtotal,
-            tax,
-            total,
-            customerId: customer.id,
-            items: { create: orderItems },
-            payments:
-              status === OrderStatus.PAID
-                ? {
-                    create: {
-                      method: getRandomElement([
-                        PaymentMethod.CASH,
-                        PaymentMethod.QRIS,
-                        PaymentMethod.CARD,
-                      ]),
-                      amount: total,
-                      paidAt: date,
-                    },
-                  }
-                : undefined,
-          },
+        // 1 transaksi per order untuk menjaga koneksi tetap rendah
+        await prisma.$transaction(async (tx) => {
+          await tx.order.create({
+            data: {
+              code: orderCode,
+              queueNumber,
+              serviceDate: date,
+              createdAt: date,
+              status,
+              diningType: getRandomElement([
+                DiningType.DINE_IN,
+                DiningType.TAKE_AWAY,
+              ]),
+              subtotal,
+              tax,
+              total,
+              customerId,
+              items: { create: orderItems },
+              payments:
+                status === OrderStatus.PAID
+                  ? {
+                      create: {
+                        method: getRandomElement([
+                          PaymentMethod.CASH,
+                          PaymentMethod.QRIS,
+                          PaymentMethod.CARD,
+                        ]),
+                        amount: total,
+                        paidAt: date,
+                      },
+                    }
+                  : undefined,
+            },
+          });
         });
+
         orderCount++;
       }
     }
+
     console.log(`✅ Seeded ${orderCount} orders over ${DAYS_TO_SEED} days.`);
   }
 
-  console.log("🎉 Seeding complete.");
+  console.log("🎉 Seeding complete (PostgreSQL).");
 }
 
 main()

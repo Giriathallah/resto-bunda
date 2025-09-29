@@ -33,9 +33,15 @@ type Actions = {
 const CartContext = createContext<(State & Actions) | null>(null);
 
 const GUEST_LS = "guest-cart:v1";
-
-// TODO: ganti ke cara ambil identitas nyata (context/auth)
+// TODO: ganti ke identitas nyata (context/auth) bila sudah siap
 const USER_ID = "demo-user-id-123"; // hanya contoh
+
+function isUnauthorized(err: unknown) {
+  return (
+    (err as any)?.message?.includes("401") ||
+    (err as any)?.message?.includes("Unauthorized")
+  );
+}
 
 async function api(path: string, init?: RequestInit) {
   const res = await fetch(path, {
@@ -63,28 +69,64 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
   const [payment, setPayment] = useState<PaymentChoice>("CASH");
   const [ready, setReady] = useState(false);
+  const [guestMode, setGuestMode] = useState(false);
 
-  const refetch = useCallback(async () => {
-    const data = await api("/api/cart");
-    const serverLines: CartLine[] = (data.items || []).map((it: any) => ({
-      id: it.id,
-      name: it.name,
-      price: it.price,
-      image: it.image ?? "",
-      category: it.category,
-      quantity: it.quantity,
-    }));
-    setLines(serverLines);
-    setReady(true);
+  const loadGuest = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(GUEST_LS);
+      const guest: CartLine[] = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(guest)) setLines(guest);
+      else setLines([]);
+    } catch {
+      setLines([]);
+    }
   }, []);
 
-  // First-load: merge guest → server (opsional), lalu fetch server
+  const persistGuest = useCallback((next: CartLine[]) => {
+    try {
+      localStorage.setItem(GUEST_LS, JSON.stringify(next));
+    } catch {}
+  }, []);
+
+  const refetch = useCallback(async () => {
+    if (guestMode) {
+      loadGuest();
+      setReady(true);
+      return;
+    }
+    try {
+      const data = await api("/api/cart");
+      const serverLines: CartLine[] = (data.items || []).map((it: any) => ({
+        id: it.id,
+        name: it.name,
+        price: it.price,
+        image: it.image ?? "",
+        category: it.category,
+        quantity: it.quantity,
+      }));
+      setLines(serverLines);
+      setReady(true);
+    } catch (e) {
+      if (isUnauthorized(e)) {
+        setGuestMode(true);
+        loadGuest();
+        setReady(true);
+        return;
+      }
+      throw e;
+    }
+  }, [guestMode, loadGuest]);
+
+  // First load: cek auth → jika authorized, merge guest→server sekali; jika 401, pakai guest
   useEffect(() => {
     (async () => {
       try {
-        const raw = localStorage.getItem(GUEST_LS);
-        if (raw) {
-          const guest: CartLine[] = JSON.parse(raw);
+        // Coba fetch untuk mendeteksi auth
+        const data = await api("/api/cart");
+        // Authorized: merge guest ke server (sekali)
+        try {
+          const raw = localStorage.getItem(GUEST_LS);
+          const guest: CartLine[] = raw ? JSON.parse(raw) : [];
           if (Array.isArray(guest) && guest.length) {
             for (const g of guest) {
               await api("/api/cart", {
@@ -94,11 +136,37 @@ export function CartProvider({ children }: { children: ReactNode }) {
             }
             localStorage.removeItem(GUEST_LS);
           }
+        } catch {}
+        // lalu ambil fresh dari server
+        const serverLines: CartLine[] = (data.items || []).map((it: any) => ({
+          id: it.id,
+          name: it.name,
+          price: it.price,
+          image: it.image ?? "",
+          category: it.category,
+          quantity: it.quantity,
+        }));
+        setLines(serverLines);
+        setReady(true);
+      } catch (e) {
+        if (isUnauthorized(e)) {
+          setGuestMode(true);
+          loadGuest();
+          setReady(true);
+          return;
         }
-      } catch {}
-      await refetch();
+        // error lain: tetap tampilkan kosong agar UI tidak crash
+        setLines([]);
+        setReady(true);
+        console.error("[Cart init]", e);
+      }
     })();
-  }, [refetch]);
+  }, [loadGuest]);
+
+  // Persist saat guest mode dan lines berubah
+  useEffect(() => {
+    if (guestMode) persistGuest(lines);
+  }, [guestMode, lines, persistGuest]);
 
   // Helpers
   const total = useCallback(
@@ -110,9 +178,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
     [lines]
   );
 
-  // Optimistic actions
+  // Actions
   const add = useCallback<Actions["add"]>(
     async (item) => {
+      // Guest: hanya localStorage
+      if (guestMode) {
+        setLines((prev) => {
+          const exist = prev.find((l) => l.id === item.id);
+          if (exist)
+            return prev.map((l) =>
+              l.id === item.id ? { ...l, quantity: l.quantity + 1 } : l
+            );
+          return [...prev, { ...item, quantity: 1 }];
+        });
+        return;
+      }
+
+      // Authorized: optimistic + server
       setLines((prev) => {
         const exist = prev.find((l) => l.id === item.id);
         if (exist)
@@ -121,27 +203,37 @@ export function CartProvider({ children }: { children: ReactNode }) {
           );
         return [...prev, { ...item, quantity: 1 }];
       });
+
       try {
         await api("/api/cart", {
           method: "POST",
           body: JSON.stringify({ productId: item.id, qty: 1 }),
         });
       } catch (e: any) {
-        if (e.message?.includes("401") || e.message?.includes("Unauthorized")) {
-          // Gunakan hard redirect agar session page auth segera dipanggil
-          window.location.href = "/sign-in";
+        if (isUnauthorized(e)) {
+          // Beralih ke guest mode tanpa hard redirect
+          setGuestMode(true);
+          loadGuest();
+          await refetch(); // akan otomatis pakai guest
           return;
         }
-
-        await refetch(); // rollback ringan via fetch fresh
+        await refetch(); // rollback via fetch fresh
         throw e;
       }
     },
-    [refetch]
+    [guestMode, loadGuest, refetch]
   );
 
   const setQty = useCallback<Actions["setQty"]>(
     async (id, qty) => {
+      if (guestMode) {
+        setLines((prev) => {
+          if (qty <= 0) return prev.filter((l) => l.id !== id);
+          return prev.map((l) => (l.id === id ? { ...l, quantity: qty } : l));
+        });
+        return;
+      }
+
       const snapshot = lines;
       setLines((prev) => {
         if (qty <= 0) return prev.filter((l) => l.id !== id);
@@ -153,37 +245,65 @@ export function CartProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ productId: id, qty }),
         });
       } catch (e) {
+        if (isUnauthorized(e)) {
+          setGuestMode(true);
+          setLines(snapshot);
+          loadGuest();
+          return;
+        }
         setLines(snapshot);
         throw e;
       }
     },
-    [lines]
+    [guestMode, lines, loadGuest]
   );
 
   const remove = useCallback<Actions["remove"]>(
     async (id) => {
+      if (guestMode) {
+        setLines((prev) => prev.filter((l) => l.id !== id));
+        return;
+      }
+
       const snapshot = lines;
       setLines((prev) => prev.filter((l) => l.id !== id));
       try {
         await api(`/api/cart/item?productId=${id}`, { method: "DELETE" });
       } catch (e) {
+        if (isUnauthorized(e)) {
+          setGuestMode(true);
+          setLines(snapshot);
+          loadGuest();
+          return;
+        }
         setLines(snapshot);
         throw e;
       }
     },
-    [lines]
+    [guestMode, lines, loadGuest]
   );
 
   const clear = useCallback<Actions["clear"]>(async () => {
+    if (guestMode) {
+      setLines([]);
+      return;
+    }
+
     const snapshot = lines;
     setLines([]);
     try {
       await api("/api/cart", { method: "DELETE" });
     } catch (e) {
+      if (isUnauthorized(e)) {
+        setGuestMode(true);
+        setLines(snapshot);
+        loadGuest();
+        return;
+      }
       setLines(snapshot);
       throw e;
     }
-  }, [lines]);
+  }, [guestMode, lines, loadGuest]);
 
   const value = useMemo(
     () => ({

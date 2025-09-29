@@ -200,7 +200,7 @@ export default function ProductsPage() {
     const p = new URLSearchParams(search.toString());
     p.set(key, val);
     if (!["page", "perPage"].includes(key)) p.set("page", "1");
-    router.replace(`/products?${p.toString()}`);
+    router.replace(`/admin/produk?${p.toString()}`);
   }
 
   // Fetch from API
@@ -376,7 +376,7 @@ export default function ProductsPage() {
 
             <Button
               variant="secondary"
-              onClick={() => router.replace("/products")}
+              onClick={() => router.replace("/admin/produk")}
             >
               <RefreshCcw className="mr-2 size-4" /> Reset
             </Button>

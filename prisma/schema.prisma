@@ -1,13 +1,12 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -54,7 +53,7 @@ enum DiningType {
 }
 
 model User {
-  id            String   @id @default(uuid())
+  id            String   @id @default(uuid()) @db.Uuid
   name          String
   email         String   @unique
   emailVerified DateTime?
@@ -75,8 +74,8 @@ model User {
 }
 
 model UserOAuthAccount {
-  id                String        @id @default(uuid())
-  userId            String
+  id                String        @id @default(uuid()) @db.Uuid
+  userId            String        @db.Uuid
   provider          OAuthProvider
   providerAccountId String
   createdAt         DateTime      @default(now())
@@ -89,8 +88,8 @@ model UserOAuthAccount {
 }
 
 model VerificationToken {
-  id         String   @id @default(uuid())
-  userId     String
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
   identifier String
   token      String   @unique
   expires    DateTime
@@ -103,19 +102,19 @@ model VerificationToken {
 }
 
 model Product {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   name      String
   price     Int
   category  Category
   stock     Int      @default(0)
   isActive  Boolean  @default(true)
-  imageUrl  String?  // <- untuk Cloudinary
+  imageUrl  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   orderItems     OrderItem[]
   stockMovements StockMovement[]
-  cartItems      CartItem[] // Added relation to CartItem
+  cartItems      CartItem[]
 
   @@index([name])
   @@index([category])
@@ -124,8 +123,8 @@ model Product {
 }
 
 model StockMovement {
-  id         String   @id @default(uuid())
-  productId  String
+  id         String   @id @default(uuid()) @db.Uuid
+  productId  String   @db.Uuid
   type       StockType
   qty        Int
   note       String?
@@ -138,8 +137,8 @@ model StockMovement {
 }
 
 model Cart {
-  id          String   @id @default(uuid())
-  customerId  String   @unique
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @unique @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -150,9 +149,9 @@ model Cart {
 }
 
 model CartItem {
-  id        String  @id @default(uuid())
-  cartId    String
-  productId String
+  id        String  @id @default(uuid()) @db.Uuid
+  cartId    String  @db.Uuid
+  productId String  @db.Uuid
   qty       Int
 
   cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade, onUpdate: Cascade)
@@ -164,7 +163,7 @@ model CartItem {
 }
 
 model Order {
-  id           String      @id @default(uuid())
+  id           String      @id @default(uuid()) @db.Uuid
   code         String      @unique
   queueNumber  String
   serviceDate  DateTime    @default(now())
@@ -176,7 +175,7 @@ model Order {
   total        Int         @default(0)
   createdAt    DateTime    @default(now())
   closedAt     DateTime?
-  customerId   String
+  customerId   String      @db.Uuid
 
   customer  User        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   items     OrderItem[]
@@ -189,12 +188,13 @@ model Order {
 }
 
 model OrderItem {
-  id        String @id @default(uuid())
-  orderId   String
-  productId String
+  id        String @id @default(uuid()) @db.Uuid
+  orderId   String @db.Uuid
+  productId String @db.Uuid
   qty       Int
-  price     Int     
-  total     Int    
+  price     Int
+  total     Int
+
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -203,8 +203,8 @@ model OrderItem {
 }
 
 model Payment {
-  id        String        @id @default(uuid())
-  orderId   String
+  id        String        @id @default(uuid()) @db.Uuid
+  orderId   String        @db.Uuid
   method    PaymentMethod
   amount    Int
   refCode   String?       @unique
