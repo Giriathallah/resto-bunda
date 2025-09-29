@@ -13,6 +13,7 @@ import { useCart } from "@/lib/cart";
 import { QuantityControl } from "@/components/user/qualityControl";
 import { CartSummary } from "@/components/user/cartSummary";
 import { PaymentChoice, OrderType } from "@/lib/shop";
+import { toast } from "sonner"; // ⬅️ add
 
 function format(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -62,15 +63,17 @@ export default function CartPage() {
       });
 
       if (res.status === 401) {
+        toast.error("Silakan masuk terlebih dahulu.");
         window.location.href = "/sign-in";
         return;
       }
       const data = await res.json();
       if (!res.ok) {
-        alert(data?.error || "Checkout gagal");
+        toast.error(data?.error || "Checkout gagal");
         return;
       }
 
+      toast.success("Order berhasil dibuat");
       window.location.href = `/cart/checkout/success?code=${encodeURIComponent(
         data.code
       )}`;
@@ -88,19 +91,20 @@ export default function CartPage() {
       });
 
       if (res.status === 401) {
+        toast.error("Silakan masuk terlebih dahulu.");
         window.location.href = "/sign-in";
         return;
       }
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data?.error || "Checkout gagal");
+        toast.error(data?.error || "Checkout gagal");
         return;
       }
 
       const snapToken: string | undefined = data?.payment?.snapToken;
       if (!snapToken) {
-        alert("Snap token tidak ditemukan dari server.");
+        toast.error("Snap token tidak ditemukan dari server.");
         return;
       }
 
@@ -110,32 +114,36 @@ export default function CartPage() {
       const isProd = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true";
 
       if (!clientKey) {
-        alert("NEXT_PUBLIC_MIDTRANS_CLIENT_KEY belum diset.");
+        toast.error("NEXT_PUBLIC_MIDTRANS_CLIENT_KEY belum diset.");
         return;
       }
 
       try {
-        await ensureSnapJs(data.clientKey ?? "", !!data.isProd);
+        // gunakan nilai dari server jika disediakan, fallback ke env
+        await ensureSnapJs(data.clientKey ?? clientKey, data.isProd ?? isProd);
         (window as any).snap.pay(snapToken, {
           onSuccess: () => {
+            toast.success("Pembayaran berhasil.");
             window.location.href = `/cart/checkout/success?code=${encodeURIComponent(
               data.code
             )}&mid=${encodeURIComponent(data.mid)}`;
           },
           onPending: () => {
+            toast.success("Pembayaran diproses. Mengecek status…");
             window.location.href = `/cart/checkout/success?code=${encodeURIComponent(
               data.code
             )}&mid=${encodeURIComponent(data.mid)}`;
           },
           onError: () => {
-            alert("Pembayaran gagal. Silakan coba lagi.");
+            toast.error("Pembayaran gagal. Silakan coba lagi.");
           },
           onClose: () => {
             // user menutup popup; order tetap AWAITING_PAYMENT
+            toast.error("Popup pembayaran ditutup.");
           },
         });
       } catch (e: any) {
-        alert(e?.message || "Gagal membuka Snap.");
+        toast.error(e?.message || "Gagal membuka Snap.");
       }
       return;
     }
@@ -153,7 +161,6 @@ export default function CartPage() {
         </Link>
         <h1 className="text-3xl font-bold">Your Cart</h1>
       </div>
-
       {lines.length === 0 ? (
         <div className="text-center py-16">
           <ShoppingCart className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
@@ -188,7 +195,10 @@ export default function CartPage() {
                   onChange={(n) => setQty(l.id, n)}
                 />
                 <button
-                  onClick={() => remove(l.id)}
+                  onClick={() => {
+                    remove(l.id);
+                    toast.success("Item dihapus dari keranjang");
+                  }}
                   className="px-3 py-2 rounded-lg hover:bg-accent"
                 >
                   Remove
@@ -226,7 +236,7 @@ export default function CartPage() {
             </div>
           </div>
 
-          {/* Payment Method: CASH / CASHLESS (Midtrans) */}
+          {/* Payment Method */}
           <div className="bg-card rounded-2xl p-6 border">
             <h3 className="font-semibold mb-4">Payment Method</h3>
             <div className="grid grid-cols-2 gap-4">
