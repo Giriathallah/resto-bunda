@@ -34,6 +34,7 @@ export async function GET() {
       name: user.name,
       avatar: user.avatarUrl,
       email: user.email,
+      role: user.role,
     };
 
     const res = NextResponse.json(profileData);

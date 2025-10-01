@@ -15,22 +15,25 @@ import { createUserSession, removeUserFromSession } from "@/lib/auth/session";
 import { OAuthProvider } from "@/generated/prisma";
 import { getOAuthClient } from "@/lib/auth/oauth/base";
 import { sendVerificationEmail } from "@/lib/email"; // Import fungsi pengiriman email
-import { generateVerificationToken } from "@/lib/token"; // Akan kita buat nanti
+import { generateVerificationToken } from "@/lib/token";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 type ActionResult = {
   error?: string;
 };
 export async function signIn(
-  unsafeData: z.infer<typeof signInSchema>
+  unsafeData: z.infer<typeof signInSchema>,
+  next?: string | null
 ): Promise<ActionResult> {
   try {
     const { success, data } = signInSchema.safeParse(unsafeData);
-    if (!success) {
-      return { error: "Data yang Anda masukkan tidak valid." };
-    }
+    if (!success) return { error: "Data yang Anda masukkan tidak valid." };
+
+    // Postgres/Supabase: pakai lowercase jika belum migrate kolom email ke CITEXT
+    const email = data.email.toLowerCase();
 
     const user = await prisma.user.findUnique({
-      where: { email: data.email },
+      where: { email },
       select: {
         id: true,
         email: true,
@@ -41,42 +44,39 @@ export async function signIn(
       },
     });
 
-    // Pesan error umum untuk keamanan (mencegah user enumeration)
-    const invalidCredentialsError = {
-      error: "Email atau password yang Anda masukkan salah.",
-    };
+    const invalid = { error: "Email atau password yang Anda masukkan salah." };
+    if (!user || !user.password || !user.salt) return invalid;
 
-    if (!user || !user.password || !user.salt) {
-      return invalidCredentialsError;
-    }
-
-    // Cek verifikasi email secara spesifik, karena ini bukan celah keamanan
     if (!user.emailVerified) {
       return {
-        error:
-          "Email Anda belum diverifikasi. Silakan periksa email Anda untuk tautan verifikasi.",
+        error: "Email Anda belum diverifikasi. Silakan cek email Anda.",
       };
     }
 
-    const isCorrectPassword = await comparePasswords({
+    const ok = await comparePasswords({
       hashedPassword: user.password,
       password: data.password,
       salt: user.salt,
     });
+    if (!ok) return invalid;
 
-    if (!isCorrectPassword) {
-      return invalidCredentialsError;
+    await createUserSession(user, await cookies());
+
+    // — Redirect (JANGAN di-catch) —
+    if (user.role === "admin") {
+      // return supaya tidak lanjut ke bawah
+      return redirect("/admin");
     }
 
-    // Jika semua valid, buat sesi dan redirect
-    await createUserSession(user, await cookies());
-  } catch (error) {
-    console.error("[SIGN_IN_ERROR]", error);
+    const safeNext =
+      next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    return redirect(safeNext);
+  } catch (err) {
+    // Biarkan NEXT_REDIRECT lewat tanpa logging
+    if (isRedirectError(err)) throw err;
+    console.error("[SIGN_IN_ERROR]", err);
     return { error: "Terjadi kesalahan pada server. Silakan coba lagi." };
   }
-
-  // Redirect harus dipanggil di luar try-catch
-  redirect("/");
 }
 
 export async function signUp(unsafeData: z.infer<typeof signUpSchema>) {
